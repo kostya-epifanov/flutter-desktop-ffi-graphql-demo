@@ -7,8 +7,8 @@ A macOS desktop application that fetches Ethereum OHLCV candlestick data via the
 This project demonstrates:
 
 - **FFI expertise**: Dart-to-C++ interop with strict memory ownership
-- **Architecture**: Clear separation between data fetching (Dart), computation (C++), and rendering (Dart + native)
-- **End-to-end flow**: Bitquery GraphQL → Dart models → Native structs → C++ engine → RGBA buffer → Flutter UI
+- **Architecture**: Feature-based layout with core (GraphQL client, FFI) and candles_renderer (data/domain/presentation); computation in C++
+- **End-to-end flow**: Bitquery GraphQL → CandleRepository → Candle models → Native structs → C++ engine → RGBA buffer → Flutter UI
 
 ---
 
@@ -21,7 +21,8 @@ flowchart TD
     end
 
     subgraph Flutter [Flutter / Dart]
-        BitqueryService[BitqueryService]
+        GraphQLClient[BitqueryGraphQLClient]
+        CandleRepo[BitqueryCandleRepository]
         CandleModel[Candle model]
         EngineBindings[FinancialEngine FFI bindings]
         ChartScreen[ChartScreen]
@@ -34,8 +35,9 @@ flowchart TD
         Free[free_buffer]
     end
 
-    Bitquery -->|HTTP POST + GraphQL| BitqueryService
-    BitqueryService -->|List Candle| CandleModel
+    Bitquery -->|HTTP POST + GraphQL| GraphQLClient
+    GraphQLClient -->|query| CandleRepo
+    CandleRepo -->|List Candle| CandleModel
     CandleModel -->|calloc + copy| EngineBindings
     EngineBindings -->|FFI| Dylib
     Dylib --> EMA
@@ -51,39 +53,56 @@ flowchart TD
 
 ```
 flutter-desktop-ffi-graphql-demo/
-├── native/                          # C++ financial engine
-│   ├── CMakeLists.txt               # Build configuration
+├── native/                              # C++ financial engine
+│   ├── CMakeLists.txt                   # Build configuration
 │   ├── include/
-│   │   └── financial_engine.h       # Public C API
+│   │   └── financial_engine.h           # Public C API
 │   └── src/
-│       ├── ema.cpp                  # EMA calculation
-│       ├── renderer.cpp             # Candlestick → RGBA pixel buffer
-│       └── financial_engine.cpp      # free_buffer implementation
+│       ├── ema.cpp                      # EMA calculation
+│       ├── renderer.cpp                 # Candlestick → RGBA pixel buffer
+│       └── financial_engine.cpp         # free_buffer implementation
 │
-├── lib/                             # Dart / Flutter
-│   ├── main.dart                    # App entry, dotenv, MaterialApp
-│   ├── models/
-│   │   └── candle.dart             # OHLCV data class
-│   ├── services/
-│   │   └── bitquery_service.dart    # GraphQL fetch + JSON parsing
-│   ├── ffi/
-│   │   ├── native_candle.dart       # FFI Struct (C ABI layout)
-│   │   └── engine_bindings.dart     # dylib load, FFI wrappers, memory mgmt
-│   └── ui/
-│       ├── chart_screen.dart        # Main screen, controls, error states
-│       └── chart_painter.dart       # RGBA buffer → ui.Image
+├── lib/                                 # Dart / Flutter
+│   ├── main.dart                        # App entry, dotenv, MaterialApp
+│   ├── core/                            # Shared infrastructure
+│   │   ├── graphql/
+│   │   │   └── bitquery_graphql_client.dart   # GraphQL client + Auth
+│   │   └── ffi/
+│   │       └── engine_bindings.dart     # dylib load, FFI wrappers, memory mgmt
+│   └── features/
+│       └── candles_renderer/
+│           ├── data/
+│           │   ├── candle.dart          # OHLCV domain model
+│           │   ├── native_candle.dart   # FFI Struct (C ABI layout)
+│           │   └── bitquery_candle_repository.dart   # GraphQL fetch → List<Candle>
+│           ├── domain/
+│           │   └── candle_repository.dart   # Port (interface)
+│           └── presentation/
+│               ├── chart_screen.dart    # Main screen, controls, error states
+│               └── chart_painter.dart   # RGBA buffer → ui.Image
 │
 ├── scripts/
-│   ├── build_native.sh              # Build libfinancial_engine.dylib
-│   └── run.sh                       # build_native + flutter run
+│   ├── build_native.sh                  # Build libfinancial_engine.dylib
+│   └── run.sh                           # build_native + flutter run
 │
-├── macos/                           # Flutter macOS runner
-│   └── Runner.xcodeproj             # Includes dylib copy build phase
+├── macos/                               # Flutter macOS runner
+│   └── Runner.xcodeproj                 # Includes dylib copy build phase
 │
-├── .env.example                     # Template for BITQUERY_API_KEY
-├── .env                             # Your API key (gitignored)
+├── .env.example                         # Template for BITQUERY_API_KEY
+├── .env                                 # Your API key (gitignored)
 └── pubspec.yaml
 ```
+
+---
+
+## Key Dependencies
+
+| Package | Purpose |
+|---------|---------|
+| `graphql_flutter` | GraphQL client, HTTP link |
+| `gql` | GraphQL AST (query parsing) |
+| `ffi` | Dart FFI for C interop |
+| `flutter_dotenv` | Load `.env` for `BITQUERY_API_KEY` |
 
 ---
 
@@ -93,8 +112,8 @@ flutter-desktop-ffi-graphql-demo/
 
 | Step | Component | Action |
 |------|-----------|--------|
-| 1 | `BitqueryService` | POST GraphQL query to Bitquery (ETH, 1h, 200 candles) |
-| 2 | `BitqueryService` | Parse JSON → `List<Candle>` |
+| 1 | `BitqueryCandleRepository` | Uses `BitqueryGraphQLClient` to POST GraphQL query to Bitquery (ETH, 1h, 200 candles) |
+| 2 | `BitqueryCandleRepository` | Parse JSON → `List<Candle>` |
 | 3 | `FinancialEngine` | Allocate native memory (`calloc`), copy candles into `NativeCandle` structs |
 | 4 | `FinancialEngine` | `calculateEma()` on close prices, then `render_candles()` with EMA overlay → RGBA pixel buffer |
 | 5 | `FinancialEngine` | Copy buffer to `Uint8List`, free native buffers |
@@ -103,19 +122,29 @@ flutter-desktop-ffi-graphql-demo/
 
 ### 2. Component Relations
 
-**BitqueryService** (`lib/services/bitquery_service.dart`)
+**BitqueryGraphQLClient** (`lib/core/graphql/bitquery_graphql_client.dart`)
 
-- Fetches OHLCV data from Bitquery Crypto Price API (`https://streaming.bitquery.io/graphql`)
+- GraphQL client configured for Bitquery's streaming API (`https://streaming.bitquery.io/graphql`)
 - Uses `Authorization: Bearer` header from `.env` (`BITQUERY_API_KEY`)
+- Throws `BitqueryException` on API key, network, or GraphQL errors
+
+**BitqueryCandleRepository** (`lib/features/candles_renderer/data/bitquery_candle_repository.dart`)
+
+- Implements `CandleRepository`; fetches OHLCV data via `BitqueryGraphQLClient`
 - Query: ETH (`bid:eth`), 1h interval, last 200 bars, last 14 days
 - Returns `List<Candle>` with `timestamp`, `open`, `high`, `low`, `close`, `volume`
 
-**Candle** (`lib/models/candle.dart`)
+**Candle** (`lib/features/candles_renderer/data/candle.dart`)
 
 - Immutable Dart model for one OHLCV candle
 - Mirrors the native `Candle` struct layout (see Struct Alignment below)
 
-**FinancialEngine** (`lib/ffi/engine_bindings.dart`)
+**CandleRepository** (`lib/features/candles_renderer/domain/candle_repository.dart`)
+
+- Abstract port: `Future<List<Candle>> fetchEthCandles()`
+- `ChartScreen` depends on this interface, not the Bitquery implementation
+
+**FinancialEngine** (`lib/core/ffi/engine_bindings.dart`)
 
 - Singleton that loads `libfinancial_engine.dylib` and binds native functions
 - **`calculateEma(prices, period)`**: Allocates `double*`, calls native, copies result, frees
@@ -128,9 +157,9 @@ flutter-desktop-ffi-graphql-demo/
 - **`render_candles`**: Allocates `width × height × 4` bytes, draws wicks and bodies (green/red) onto dark background, optionally draws a bright 2px EMA line overlay when EMA data is provided
 - **`free_buffer`**: Frees pointers returned by `calculate_ema` and `render_candles`
 
-**ChartScreen** (`lib/ui/chart_screen.dart`)
+**ChartScreen** (`lib/features/candles_renderer/presentation/chart_screen.dart`)
 
-- Fetches candles on load, renders chart (1200×600)
+- Injected with `CandleRepository`; fetches candles on load, renders chart (1200×600)
 - **EMA period selector**: Dropdown for EMA 9, 21, or 50 — changing the period or clicking refresh immediately redraws the chart with the selected EMA line overlay
 - Loading and error states
 
@@ -142,10 +171,10 @@ flutter-desktop-ffi-graphql-demo/
 
 | Allocator | Who frees | Where |
 |-----------|-----------|-------|
-| Dart `calloc` for `double[]` (EMA input) | Dart `calloc.free` | `engine_bindings.dart` |
-| Dart `calloc` for `NativeCandle[]` | Dart `calloc.free` | `engine_bindings.dart` |
-| Native `malloc` in `calculate_ema` | Dart calls `free_buffer` | `engine_bindings.dart` |
-| Native `malloc` in `render_candles` | Dart calls `free_buffer` | `engine_bindings.dart` |
+| Dart `calloc` for `double[]` (EMA input) | Dart `calloc.free` | `core/ffi/engine_bindings.dart` |
+| Dart `calloc` for `NativeCandle[]` | Dart `calloc.free` | `core/ffi/engine_bindings.dart` |
+| Native `malloc` in `calculate_ema` | Dart calls `free_buffer` | `core/ffi/engine_bindings.dart` |
+| Native `malloc` in `render_candles` | Dart calls `free_buffer` | `core/ffi/engine_bindings.dart` |
 
 ### Why `free_buffer` exists
 
@@ -189,7 +218,7 @@ typedef struct {
 } Candle;
 ```
 
-**Dart (FFI Struct):**
+**Dart (FFI Struct, `lib/features/candles_renderer/data/native_candle.dart`):**
 ```dart
 base class NativeCandle extends Struct {
   @Int64()   external int timestamp;
