@@ -62,8 +62,10 @@ class _ChartScreenState extends State<ChartScreen> {
       });
       return;
     }
-    final buffer =
-        _engine.renderCandles(_candles, _chartWidth, _chartHeight);
+    final closePrices = _candles.map((c) => c.close).toList();
+    final ema = _engine.calculateEma(closePrices, _emaPeriod);
+    final buffer = _engine.renderCandles(_candles, _chartWidth, _chartHeight,
+        ema: ema);
     rgbaBufferToImage(buffer, _chartWidth, _chartHeight).then((image) {
       if (!mounted) return;
       setState(() {

@@ -100,23 +100,39 @@ class FinancialEngine {
   }
 
   /// Renders candlesticks to an RGBA buffer.
+  /// If [ema] is provided and has the same length as candles, draws the EMA line overlay.
   /// Returns a Uint8List that the caller owns (copied from native buffer).
-  Uint8List renderCandles(List<Candle> candles, int width, int height) {
+  Uint8List renderCandles(List<Candle> candles, int width, int height,
+      {List<double>? ema}) {
     if (candles.isEmpty || width <= 0 || height <= 0) {
       return Uint8List(0);
     }
 
     final ptr = _allocateCandles(candles);
     try {
-      final bufferPtr = _renderCandles(ptr, candles.length, width, height);
-      if (bufferPtr == nullptr) {
-        return Uint8List(0);
+      Pointer<Double>? emaPtr;
+      int emaCount = 0;
+      if (ema != null && ema.length == candles.length) {
+        emaPtr = ema.allocate();
+        emaCount = ema.length;
       }
+
       try {
-        final size = width * height * 4;
-        return Uint8List.fromList(bufferPtr.asTypedList(size));
+        final bufferPtr = _renderCandles(ptr, candles.length, width, height,
+            emaPtr ?? Pointer<Double>.fromAddress(0), emaCount);
+        if (bufferPtr == nullptr) {
+          return Uint8List(0);
+        }
+        try {
+          final size = width * height * 4;
+          return Uint8List.fromList(bufferPtr.asTypedList(size));
+        } finally {
+          _freeBuffer(bufferPtr.cast());
+        }
       } finally {
-        _freeBuffer(bufferPtr.cast());
+        if (emaPtr != null) {
+          emaPtr.freeAllocated(ema!);
+        }
       }
     } finally {
       _freeCandles(ptr, candles.length);
@@ -149,9 +165,19 @@ typedef _CalculateEma = Pointer<Double> Function(
     Pointer<Double> prices, int length, int period);
 
 typedef RenderCandlesNative = Pointer<Uint8> Function(
-    Pointer<NativeCandle> candles, Int32 count, Int32 width, Int32 height);
+    Pointer<NativeCandle> candles,
+    Int32 count,
+    Int32 width,
+    Int32 height,
+    Pointer<Double> ema,
+    Int32 emaCount);
 typedef _RenderCandles = Pointer<Uint8> Function(
-    Pointer<NativeCandle> candles, int count, int width, int height);
+    Pointer<NativeCandle> candles,
+    int count,
+    int width,
+    int height,
+    Pointer<Double> ema,
+    int emaCount);
 
 typedef FreeBufferNative = Void Function(Pointer<Void> ptr);
 typedef _FreeBuffer = void Function(Pointer<Void> ptr);

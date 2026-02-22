@@ -1,6 +1,6 @@
 # Flutter Desktop + Native C++ Financial Engine (ETH Demo)
 
-A macOS desktop application that fetches Ethereum OHLCV candlestick data via the Bitquery GraphQL API, processes it through a native C++ financial engine (EMA calculation, candlestick rendering), and displays the result in Flutter via Dart FFI.
+A macOS desktop application that fetches Ethereum OHLCV candlestick data via the Bitquery GraphQL API, processes it through a native C++ financial engine (EMA calculation, candlestick rendering), and displays the result in Flutter via Dart FFI. The chart draws candlesticks with an overlaid **EMA line** (Exponential Moving Average). An **EMA period selector** (9, 21, 50) lets you switch between different smoothing periods; changing the selection or clicking refresh redraws the chart with the chosen EMA.
 
 ## Project Goal
 
@@ -96,7 +96,7 @@ flutter-desktop-ffi-graphql-demo/
 | 1 | `BitqueryService` | POST GraphQL query to Bitquery (ETH, 1h, 200 candles) |
 | 2 | `BitqueryService` | Parse JSON → `List<Candle>` |
 | 3 | `FinancialEngine` | Allocate native memory (`calloc`), copy candles into `NativeCandle` structs |
-| 4 | `libfinancial_engine.dylib` | `render_candles()` → RGBA pixel buffer |
+| 4 | `FinancialEngine` | `calculateEma()` on close prices, then `render_candles()` with EMA overlay → RGBA pixel buffer |
 | 5 | `FinancialEngine` | Copy buffer to `Uint8List`, free native buffers |
 | 6 | `chart_painter.dart` | `decodeImageFromPixels()` → `ui.Image` |
 | 7 | `ChartScreen` | Display via `RawImage` widget |
@@ -119,19 +119,19 @@ flutter-desktop-ffi-graphql-demo/
 
 - Singleton that loads `libfinancial_engine.dylib` and binds native functions
 - **`calculateEma(prices, period)`**: Allocates `double*`, calls native, copies result, frees
-- **`renderCandles(candles, width, height)`**: Allocates `NativeCandle[]`, calls `render_candles`, copies RGBA to `Uint8List`, frees all
+- **`renderCandles(candles, width, height, {ema})`**: Allocates `NativeCandle[]`, optionally passes EMA values for overlay, calls `render_candles`, copies RGBA to `Uint8List`, frees all
 - Resolves dylib path: `Contents/Frameworks` → next to executable → project root
 
 **Native Engine** (`native/`)
 
 - **`calculate_ema`**: SMA-seeded EMA, multiplier `2/(period+1)`, heap-allocates result
-- **`render_candles`**: Allocates `width × height × 4` bytes, draws wicks and bodies (green/red) onto dark background
+- **`render_candles`**: Allocates `width × height × 4` bytes, draws wicks and bodies (green/red) onto dark background, optionally draws a bright 2px EMA line overlay when EMA data is provided
 - **`free_buffer`**: Frees pointers returned by `calculate_ema` and `render_candles`
 
 **ChartScreen** (`lib/ui/chart_screen.dart`)
 
 - Fetches candles on load, renders chart (1200×600)
-- Dropdown for EMA period (9, 21, 50), refresh button
+- **EMA period selector**: Dropdown for EMA 9, 21, or 50 — changing the period or clicking refresh immediately redraws the chart with the selected EMA line overlay
 - Loading and error states
 
 ---

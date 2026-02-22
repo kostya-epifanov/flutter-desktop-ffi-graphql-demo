@@ -24,10 +24,11 @@ double* calculate_ema(const double* prices, int32_t length, int32_t period);
 
 /**
  * Renders candlesticks into an RGBA buffer (width * height * 4 bytes).
+ * If ema is non-NULL and ema_count equals count, draws the EMA line overlay.
  * Caller must free the returned buffer using free_buffer().
  */
 uint8_t* render_candles(const Candle* candles, int32_t count, int32_t width,
-                        int32_t height);
+                        int32_t height, const double* ema, int32_t ema_count);
 
 /**
  * Frees any buffer allocated by calculate_ema or render_candles.

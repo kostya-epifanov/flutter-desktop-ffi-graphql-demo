@@ -30,6 +30,12 @@ constexpr uint8_t kWickG = 0xa3;
 constexpr uint8_t kWickB = 0xb8;
 constexpr uint8_t kWickA = 0xff;
 
+// EMA line color (bright cyan)
+constexpr uint8_t kEmaR = 0x7d;
+constexpr uint8_t kEmaG = 0xd4;
+constexpr uint8_t kEmaB = 0xff;
+constexpr uint8_t kEmaA = 0xff;
+
 void set_pixel(uint8_t* buffer, int32_t width, int32_t x, int32_t y, uint8_t r,
                uint8_t g, uint8_t b, uint8_t a) {
   if (x < 0 || x >= width || y < 0) return;
@@ -64,15 +70,52 @@ void draw_rect_v(uint8_t* buffer, int32_t width, int32_t height, int32_t x,
   }
 }
 
+// Bresenham's line algorithm for diagonal segments (EMA line).
+// thickness 2: draws a 2px-wide line for better visibility.
+void draw_line_thick(uint8_t* buffer, int32_t width, int32_t height,
+                     int32_t x0, int32_t y0, int32_t x1, int32_t y1,
+                     uint8_t r, uint8_t g, uint8_t b, uint8_t a,
+                     int32_t thickness) {
+  int32_t dx = std::abs(x1 - x0);
+  int32_t dy = std::abs(y1 - y0);
+  int32_t sx = (x0 < x1) ? 1 : -1;
+  int32_t sy = (y0 < y1) ? 1 : -1;
+  int32_t err = dx - dy;
+
+  while (true) {
+    for (int32_t oy = 0; oy < thickness; ++oy) {
+      for (int32_t ox = 0; ox < thickness; ++ox) {
+        int32_t px = x0 + ox;
+        int32_t py = y0 + oy;
+        if (px >= 0 && px < width && py >= 0 && py < height) {
+          set_pixel(buffer, width, px, py, r, g, b, a);
+        }
+      }
+    }
+    if (x0 == x1 && y0 == y1) break;
+    int32_t e2 = 2 * err;
+    if (e2 > -dy) {
+      err -= dy;
+      x0 += sx;
+    }
+    if (e2 < dx) {
+      err += dx;
+      y0 += sy;
+    }
+  }
+}
+
 }  // namespace
 
 extern "C" {
 
 uint8_t* render_candles(const Candle* candles, int32_t count, int32_t width,
-                        int32_t height) {
+                        int32_t height, const double* ema, int32_t ema_count) {
   if (candles == nullptr || count <= 0 || width <= 0 || height <= 0) {
     return nullptr;
   }
+
+  const bool draw_ema = (ema != nullptr && ema_count == count);
 
   size_t size = static_cast<size_t>(width) * static_cast<size_t>(height) * 4;
   uint8_t* buffer = static_cast<uint8_t*>(malloc(size));
@@ -88,12 +131,20 @@ uint8_t* render_candles(const Candle* candles, int32_t count, int32_t width,
     buffer[i * 4 + 3] = kBga;
   }
 
-  // Price range
+  // Price range (include EMA values when drawing EMA)
   double price_min = candles[0].low;
   double price_max = candles[0].high;
   for (int32_t i = 1; i < count; ++i) {
     price_min = std::min(price_min, candles[i].low);
     price_max = std::max(price_max, candles[i].high);
+  }
+  if (draw_ema) {
+    for (int32_t i = 0; i < count; ++i) {
+      if (!std::isnan(ema[i])) {
+        price_min = std::min(price_min, ema[i]);
+        price_max = std::max(price_max, ema[i]);
+      }
+    }
   }
   double price_range = price_max - price_min;
   if (price_range < 1e-12) price_range = 1.0;
@@ -139,6 +190,24 @@ uint8_t* render_candles(const Candle* candles, int32_t count, int32_t width,
     for (int32_t dx = -body_w / 2; dx <= body_w / 2; ++dx) {
       draw_rect_v(buffer, width, height, cx + dx, body_top, body_bot, r, g, b,
                   a);
+    }
+  }
+
+  // Draw EMA line overlay
+  if (draw_ema) {
+    int32_t prev_cx = -1;
+    int32_t prev_y = -1;
+    for (int32_t i = 0; i < count; ++i) {
+      double v = ema[i];
+      if (std::isnan(v)) continue;
+      int32_t cx = pad_x + i * candle_total_w + candle_total_w / 2;
+      int32_t y = price_to_y(v);
+      if (prev_cx >= 0) {
+        draw_line_thick(buffer, width, height, prev_cx, prev_y, cx, y, kEmaR,
+                        kEmaG, kEmaB, kEmaA, 2);
+      }
+      prev_cx = cx;
+      prev_y = y;
     }
   }
 
