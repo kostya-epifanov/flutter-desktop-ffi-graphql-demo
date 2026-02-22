@@ -2,9 +2,9 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
-import '../domain/repositories/candle_repository.dart';
-import '../ffi/engine_bindings.dart';
-import '../models/candle.dart';
+import '../domain/candle_repository.dart';
+import '../../../core/ffi/engine_bindings.dart';
+import '../data/candle.dart';
 import 'chart_painter.dart';
 
 class ChartScreen extends StatefulWidget {

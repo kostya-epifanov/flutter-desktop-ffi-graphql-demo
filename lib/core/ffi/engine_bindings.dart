@@ -3,8 +3,8 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
-import 'package:flutter_desktop_ffi_graphql_demo/ffi/native_candle.dart';
-import 'package:flutter_desktop_ffi_graphql_demo/models/candle.dart';
+import 'package:flutter_desktop_ffi_graphql_demo/features/candles_renderer/data/native_candle.dart';
+import 'package:flutter_desktop_ffi_graphql_demo/features/candles_renderer/data/candle.dart';
 
 /// Binds to libfinancial_engine.dylib and provides Dart-friendly wrappers
 /// with proper memory management.

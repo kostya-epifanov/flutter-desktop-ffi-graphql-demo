@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
-import 'data/repositories/bitquery_candle_repository.dart';
-import 'ui/chart_screen.dart';
+import 'features/candles_renderer/data/bitquery_candle_repository.dart';
+import 'features/candles_renderer/presentation/chart_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();

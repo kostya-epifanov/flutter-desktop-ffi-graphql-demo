@@ -1,8 +1,8 @@
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:graphql_flutter/graphql_flutter.dart';
 
-import '../../domain/repositories/candle_repository.dart';
-import '../../models/candle.dart';
+import '../domain/candle_repository.dart';
+import 'candle.dart';
 
 /// Bitquery GraphQL implementation of [CandleRepository].
 class BitqueryCandleRepository implements CandleRepository {

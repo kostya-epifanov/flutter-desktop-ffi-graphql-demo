@@ -1,4 +1,4 @@
-import '../../models/candle.dart';
+import '../data/candle.dart';
 
 /// Port for fetching OHLCV candle data.
 abstract class CandleRepository {
