@@ -1,21 +1,15 @@
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:graphql_flutter/graphql_flutter.dart';
 
+import '../../../core/graphql/bitquery_graphql_client.dart';
 import '../domain/candle_repository.dart';
 import 'candle.dart';
 
 /// Bitquery GraphQL implementation of [CandleRepository].
 class BitqueryCandleRepository implements CandleRepository {
-  BitqueryCandleRepository({
-    String? apiKey,
-    String endpoint = 'https://streaming.bitquery.io/graphql',
-  })  : _apiKey = apiKey ?? dotenv.env['BITQUERY_API_KEY'],
-        _endpoint = endpoint;
+  BitqueryCandleRepository({BitqueryGraphQLClient? graphqlClient})
+      : _client = graphqlClient ?? BitqueryGraphQLClient();
 
-  final String? _apiKey;
-  final String _endpoint;
-
-  GraphQLClient? _client;
+  final BitqueryGraphQLClient _client;
 
   static const _ethCurrencyId = 'bid:eth';
   static const _oneHourSeconds = 3600;
@@ -42,56 +36,9 @@ query EthOhlcv {
 }
 ''');
 
-  GraphQLClient _getClient() {
-    _client ??= _createClient();
-    return _client!;
-  }
-
-  GraphQLClient _createClient() {
-    final apiKey = _requireApiKey();
-    final httpLink = HttpLink(_endpoint);
-    final authLink = AuthLink(getToken: () async => 'Bearer $apiKey');
-    final link = authLink.concat(httpLink);
-
-    return GraphQLClient(
-      link: link,
-      cache: GraphQLCache(store: InMemoryStore()),
-    );
-  }
-
-  String _requireApiKey() {
-    final key = _apiKey;
-    if (key == null || key.isEmpty || key == 'your_key_here') {
-      throw BitqueryException(
-        'Bitquery API key not configured. Copy .env.example to .env and set BITQUERY_API_KEY.',
-      );
-    }
-    return key;
-  }
-
   @override
   Future<List<Candle>> fetchEthCandles() async {
-    _requireApiKey();
-
-    final result = await _getClient().query(
-      QueryOptions(
-        document: _ethOhlcvQuery,
-        fetchPolicy: FetchPolicy.networkOnly,
-      ),
-    );
-
-    if (result.hasException) {
-      final ex = result.exception!;
-      final msg = ex.graphqlErrors.isNotEmpty
-          ? ex.graphqlErrors.first.message
-          : (ex.linkException?.toString() ?? ex.toString());
-      throw BitqueryException('GraphQL error: $msg');
-    }
-
-    final data = result.data;
-    if (data == null) {
-      throw BitqueryException('No data in response');
-    }
+    final data = await _client.query(_ethOhlcvQuery);
 
     final trading = data['Trading'] as Map<String, dynamic>?;
     if (trading == null) {
@@ -143,14 +90,4 @@ query EthOhlcv {
     if (v is num) return v.toDouble();
     return double.tryParse(v.toString()) ?? 0.0;
   }
-}
-
-/// Thrown when Bitquery API requests fail.
-class BitqueryException implements Exception {
-  BitqueryException(this.message);
-
-  final String message;
-
-  @override
-  String toString() => 'BitqueryException: $message';
 }
