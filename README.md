@@ -7,7 +7,7 @@ A macOS desktop application that fetches Ethereum OHLCV candlestick data via the
 This project demonstrates:
 
 - **FFI expertise**: Dart-to-C++ interop with strict memory ownership
-- **Clean architecture**: Clear separation between data fetching (Dart), computation (C++), and rendering (Dart + native)
+- **Architecture**: Clear separation between data fetching (Dart), computation (C++), and rendering (Dart + native)
 - **End-to-end flow**: Bitquery GraphQL → Dart models → Native structs → C++ engine → RGBA buffer → Flutter UI
 
 ---

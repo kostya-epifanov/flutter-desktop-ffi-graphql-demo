@@ -1,13 +1,12 @@
-import 'dart:convert';
-
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:http/http.dart' as http;
+import 'package:graphql_flutter/graphql_flutter.dart';
 
-import '../models/candle.dart';
+import '../../domain/repositories/candle_repository.dart';
+import '../../models/candle.dart';
 
-/// Fetches OHLCV candle data from Bitquery GraphQL Crypto Price API.
-class BitqueryService {
-  BitqueryService({
+/// Bitquery GraphQL implementation of [CandleRepository].
+class BitqueryCandleRepository implements CandleRepository {
+  BitqueryCandleRepository({
     String? apiKey,
     String endpoint = 'https://streaming.bitquery.io/graphql',
   })  : _apiKey = apiKey ?? dotenv.env['BITQUERY_API_KEY'],
@@ -16,20 +15,13 @@ class BitqueryService {
   final String? _apiKey;
   final String _endpoint;
 
+  GraphQLClient? _client;
+
   static const _ethCurrencyId = 'bid:eth';
   static const _oneHourSeconds = 3600;
   static const _candleLimit = 200;
 
-  /// Fetches last 200 ETH 1h candles.
-  Future<List<Candle>> fetchEthCandles() async {
-    final apiKey = _apiKey;
-    if (apiKey == null || apiKey.isEmpty || apiKey == 'your_key_here') {
-      throw BitqueryException(
-        'Bitquery API key not configured. Copy .env.example to .env and set BITQUERY_API_KEY.',
-      );
-    }
-
-    const query = '''
+  static final _ethOhlcvQuery = gql('''
 query EthOhlcv {
   Trading {
     Currencies(
@@ -48,33 +40,55 @@ query EthOhlcv {
     }
   }
 }
-''';
+''');
 
-    final response = await http.post(
-      Uri.parse(_endpoint),
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $apiKey',
-      },
-      body: jsonEncode({'query': query}),
+  GraphQLClient _getClient() {
+    _client ??= _createClient();
+    return _client!;
+  }
+
+  GraphQLClient _createClient() {
+    final apiKey = _requireApiKey();
+    final httpLink = HttpLink(_endpoint);
+    final authLink = AuthLink(getToken: () async => 'Bearer $apiKey');
+    final link = authLink.concat(httpLink);
+
+    return GraphQLClient(
+      link: link,
+      cache: GraphQLCache(store: InMemoryStore()),
     );
+  }
 
-    if (response.statusCode != 200) {
+  String _requireApiKey() {
+    final key = _apiKey;
+    if (key == null || key.isEmpty || key == 'your_key_here') {
       throw BitqueryException(
-        'HTTP ${response.statusCode}: ${response.reasonPhrase ?? response.body}',
+        'Bitquery API key not configured. Copy .env.example to .env and set BITQUERY_API_KEY.',
       );
     }
+    return key;
+  }
 
-    final json = jsonDecode(response.body) as Map<String, dynamic>;
-    final errors = json['errors'];
-    if (errors != null) {
-      final msg = errors is List && errors.isNotEmpty
-          ? (errors[0] as Map)['message']?.toString() ?? errors.toString()
-          : errors.toString();
+  @override
+  Future<List<Candle>> fetchEthCandles() async {
+    _requireApiKey();
+
+    final result = await _getClient().query(
+      QueryOptions(
+        document: _ethOhlcvQuery,
+        fetchPolicy: FetchPolicy.networkOnly,
+      ),
+    );
+
+    if (result.hasException) {
+      final ex = result.exception!;
+      final msg = ex.graphqlErrors.isNotEmpty
+          ? ex.graphqlErrors.first.message
+          : (ex.linkException?.toString() ?? ex.toString());
       throw BitqueryException('GraphQL error: $msg');
     }
 
-    final data = json['data'] as Map<String, dynamic>?;
+    final data = result.data;
     if (data == null) {
       throw BitqueryException('No data in response');
     }
@@ -108,14 +122,16 @@ query EthOhlcv {
         continue;
       }
 
-      candles.add(Candle(
-        timestamp: (ts is num) ? ts.toInt() : int.parse(ts.toString()),
-        open: _toDouble(open),
-        high: _toDouble(high),
-        low: _toDouble(low),
-        close: _toDouble(close),
-        volume: _toDouble(usd ?? 0),
-      ));
+      candles.add(
+        Candle(
+          timestamp: (ts is num) ? ts.toInt() : int.parse(ts.toString()),
+          open: _toDouble(open),
+          high: _toDouble(high),
+          low: _toDouble(low),
+          close: _toDouble(close),
+          volume: _toDouble(usd ?? 0),
+        ),
+      );
     }
 
     // API returns descending; we want chronological
@@ -129,9 +145,12 @@ query EthOhlcv {
   }
 }
 
+/// Thrown when Bitquery API requests fail.
 class BitqueryException implements Exception {
   BitqueryException(this.message);
+
   final String message;
+
   @override
   String toString() => 'BitqueryException: $message';
 }

@@ -3,20 +3,16 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
-
-import 'package:flutter_desktop_ffi_graphql_demo/models/candle.dart';
 import 'package:flutter_desktop_ffi_graphql_demo/ffi/native_candle.dart';
+import 'package:flutter_desktop_ffi_graphql_demo/models/candle.dart';
 
 /// Binds to libfinancial_engine.dylib and provides Dart-friendly wrappers
 /// with proper memory management.
 class FinancialEngine {
-  FinancialEngine._(
-    this._calculateEma,
-    this._renderCandles,
-    this._freeBuffer,
-  );
+  FinancialEngine._(this._calculateEma, this._renderCandles, this._freeBuffer);
 
   static FinancialEngine? _instance;
+
   static FinancialEngine get instance {
     _instance ??= _load();
     return _instance!;
@@ -102,8 +98,7 @@ class FinancialEngine {
   /// Renders candlesticks to an RGBA buffer.
   /// If [ema] is provided and has the same length as candles, draws the EMA line overlay.
   /// Returns a Uint8List that the caller owns (copied from native buffer).
-  Uint8List renderCandles(List<Candle> candles, int width, int height,
-      {List<double>? ema}) {
+  Uint8List renderCandles(List<Candle> candles, int width, int height, {List<double>? ema}) {
     if (candles.isEmpty || width <= 0 || height <= 0) {
       return Uint8List(0);
     }
@@ -118,8 +113,14 @@ class FinancialEngine {
       }
 
       try {
-        final bufferPtr = _renderCandles(ptr, candles.length, width, height,
-            emaPtr ?? Pointer<Double>.fromAddress(0), emaCount);
+        final bufferPtr = _renderCandles(
+          ptr,
+          candles.length,
+          width,
+          height,
+          emaPtr ?? Pointer<Double>.fromAddress(0),
+          emaCount,
+        );
         if (bufferPtr == nullptr) {
           return Uint8List(0);
         }
@@ -159,25 +160,28 @@ class FinancialEngine {
 }
 
 // Native function typedefs
-typedef CalculateEmaNative = Pointer<Double> Function(
-    Pointer<Double> prices, Int32 length, Int32 period);
-typedef _CalculateEma = Pointer<Double> Function(
-    Pointer<Double> prices, int length, int period);
+typedef CalculateEmaNative =
+    Pointer<Double> Function(Pointer<Double> prices, Int32 length, Int32 period);
+typedef _CalculateEma = Pointer<Double> Function(Pointer<Double> prices, int length, int period);
 
-typedef RenderCandlesNative = Pointer<Uint8> Function(
-    Pointer<NativeCandle> candles,
-    Int32 count,
-    Int32 width,
-    Int32 height,
-    Pointer<Double> ema,
-    Int32 emaCount);
-typedef _RenderCandles = Pointer<Uint8> Function(
-    Pointer<NativeCandle> candles,
-    int count,
-    int width,
-    int height,
-    Pointer<Double> ema,
-    int emaCount);
+typedef RenderCandlesNative =
+    Pointer<Uint8> Function(
+      Pointer<NativeCandle> candles,
+      Int32 count,
+      Int32 width,
+      Int32 height,
+      Pointer<Double> ema,
+      Int32 emaCount,
+    );
+typedef _RenderCandles =
+    Pointer<Uint8> Function(
+      Pointer<NativeCandle> candles,
+      int count,
+      int width,
+      int height,
+      Pointer<Double> ema,
+      int emaCount,
+    );
 
 typedef FreeBufferNative = Void Function(Pointer<Void> ptr);
 typedef _FreeBuffer = void Function(Pointer<Void> ptr);

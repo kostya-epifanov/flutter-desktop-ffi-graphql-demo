@@ -1,8 +1,8 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
+import 'data/repositories/bitquery_candle_repository.dart';
 import 'ui/chart_screen.dart';
 
 void main() async {
@@ -40,12 +40,9 @@ class MyApp extends StatelessWidget {
       title: 'ETH Native FFI Chart',
       debugShowCheckedModeBanner: false,
       theme: ThemeData.dark().copyWith(
-        colorScheme: ColorScheme.dark(
-          primary: Colors.teal,
-          surface: const Color(0xFF1a1a2e),
-        ),
+        colorScheme: ColorScheme.dark(primary: Colors.teal, surface: const Color(0xFF1a1a2e)),
       ),
-      home: const ChartScreen(),
+      home: ChartScreen(candleRepository: BitqueryCandleRepository()),
     );
   }
 }

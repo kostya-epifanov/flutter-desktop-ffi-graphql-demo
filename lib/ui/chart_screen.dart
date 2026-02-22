@@ -2,13 +2,15 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
+import '../domain/repositories/candle_repository.dart';
 import '../ffi/engine_bindings.dart';
 import '../models/candle.dart';
-import '../services/bitquery_service.dart';
 import 'chart_painter.dart';
 
 class ChartScreen extends StatefulWidget {
-  const ChartScreen({super.key});
+  const ChartScreen({super.key, required this.candleRepository});
+
+  final CandleRepository candleRepository;
 
   @override
   State<ChartScreen> createState() => _ChartScreenState();
@@ -24,7 +26,6 @@ class _ChartScreenState extends State<ChartScreen> {
   static const _chartWidth = 1200;
   static const _chartHeight = 600;
 
-  final BitqueryService _bitquery = BitqueryService();
   final FinancialEngine _engine = FinancialEngine.instance;
 
   @override
@@ -39,7 +40,7 @@ class _ChartScreenState extends State<ChartScreen> {
       _error = null;
     });
     try {
-      final candles = await _bitquery.fetchEthCandles();
+      final candles = await widget.candleRepository.fetchEthCandles();
       if (!mounted) return;
       _candles = candles;
       _renderChart();
@@ -64,8 +65,7 @@ class _ChartScreenState extends State<ChartScreen> {
     }
     final closePrices = _candles.map((c) => c.close).toList();
     final ema = _engine.calculateEma(closePrices, _emaPeriod);
-    final buffer = _engine.renderCandles(_candles, _chartWidth, _chartHeight,
-        ema: ema);
+    final buffer = _engine.renderCandles(_candles, _chartWidth, _chartHeight, ema: ema);
     rgbaBufferToImage(buffer, _chartWidth, _chartHeight).then((image) {
       if (!mounted) return;
       setState(() {
@@ -91,9 +91,7 @@ class _ChartScreenState extends State<ChartScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             _buildControls(),
-            Expanded(
-              child: _buildContent(),
-            ),
+            Expanded(child: _buildContent()),
           ],
         ),
       ),
@@ -107,11 +105,7 @@ class _ChartScreenState extends State<ChartScreen> {
         children: [
           const Text(
             'ETH Native FFI Chart',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-            ),
+            style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
           ),
           const SizedBox(width: 24),
           DropdownButton<int>(
@@ -143,9 +137,7 @@ class _ChartScreenState extends State<ChartScreen> {
 
   Widget _buildContent() {
     if (_loading && _chartImage == null) {
-      return const Center(
-        child: CircularProgressIndicator(color: Colors.white),
-      );
+      return const Center(child: CircularProgressIndicator(color: Colors.white));
     }
     if (_error != null) {
       return Center(
@@ -168,17 +160,11 @@ class _ChartScreenState extends State<ChartScreen> {
     }
     if (_chartImage == null) {
       return const Center(
-        child: Text(
-          'No chart data',
-          style: TextStyle(color: Colors.grey),
-        ),
+        child: Text('No chart data', style: TextStyle(color: Colors.grey)),
       );
     }
     return Center(
-      child: RawImage(
-        image: _chartImage,
-        fit: BoxFit.contain,
-      ),
+      child: RawImage(image: _chartImage, fit: BoxFit.contain),
     );
   }
 }
