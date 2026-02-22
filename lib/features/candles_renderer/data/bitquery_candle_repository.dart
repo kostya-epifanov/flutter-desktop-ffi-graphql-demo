@@ -1,6 +1,5 @@
-import 'package:graphql_flutter/graphql_flutter.dart';
-
 import '../../../core/graphql/bitquery_graphql_client.dart';
+import '../../../core/graphql/queries/eth_ohlcv.graphql.dart';
 import '../domain/candle_repository.dart';
 import 'candle.dart';
 
@@ -14,69 +13,60 @@ class BitqueryCandleRepository implements CandleRepository {
   static const _ethCurrencyId = 'bid:eth';
   static const _oneHourSeconds = 3600;
   static const _candleLimit = 200;
-
-  static final _ethOhlcvQuery = gql('''
-query EthOhlcv {
-  Trading {
-    Currencies(
-      where: {
-        Currency: { Id: { is: "$_ethCurrencyId" } },
-        Interval: { Time: { Duration: { eq: $_oneHourSeconds } } },
-        Volume: { Usd: { gt: 5 } },
-        Block: { Time: { since_relative: { days_ago: 14 } } }
-      },
-      limit: { count: $_candleLimit },
-      orderBy: { descending: Block_Time }
-    ) {
-      Block { Timestamp }
-      Volume { Usd }
-      Price { Ohlc { Open High Low Close } }
-    }
-  }
-}
-''');
+  static const _daysAgo = 14;
 
   @override
   Future<List<Candle>> fetchEthCandles() async {
-    final data = await _client.query(_ethOhlcvQuery);
+    final variables = Variables$Query$EthOhlcv(
+      currencyId: _ethCurrencyId,
+      duration: _oneHourSeconds,
+      limit: _candleLimit,
+      daysAgo: _daysAgo,
+    );
 
-    final trading = data['Trading'] as Map<String, dynamic>?;
+    final data = await _client.query(
+      documentNodeQueryEthOhlcv,
+      variables: variables.toJson(),
+    );
+
+    final parsed = Query$EthOhlcv.fromJson(data);
+    final trading = parsed.Trading;
     if (trading == null) {
       throw BitqueryException('No Trading data in response');
     }
 
-    final currencies = trading['Currencies'] as List<dynamic>?;
+    final currencies = trading.Currencies;
     if (currencies == null || currencies.isEmpty) {
       return [];
     }
 
     final candles = <Candle>[];
     for (final item in currencies) {
-      final map = item as Map<String, dynamic>;
-      final block = map['Block'] as Map<String, dynamic>?;
-      final volume = map['Volume'] as Map<String, dynamic>?;
-      final price = map['Price'] as Map<String, dynamic>?;
-      final ohlc = price?['Ohlc'] as Map<String, dynamic>?;
+      final currency = item;
+      if (currency == null) continue;
+
+      final block = currency.Block;
+      final ohlc = currency.Price?.Ohlc;
       if (block == null || ohlc == null) continue;
 
-      final ts = block['Timestamp'];
-      final usd = volume?['Usd'];
-      final open = ohlc['Open'];
-      final high = ohlc['High'];
-      final low = ohlc['Low'];
-      final close = ohlc['Close'];
+      final ts = block.Timestamp;
+      final usd = currency.Volume?.Usd;
+      final open = ohlc.Open;
+      final high = ohlc.High;
+      final low = ohlc.Low;
+      final close = ohlc.Close;
       if (ts == null || open == null || high == null || low == null || close == null) {
         continue;
       }
 
       candles.add(
         Candle(
-          timestamp: (ts is num) ? ts.toInt() : int.parse(ts.toString()),
-          open: _toDouble(open),
-          high: _toDouble(high),
-          low: _toDouble(low),
-          close: _toDouble(close),
-          volume: _toDouble(usd ?? 0),
+          timestamp: ts.toInt(),
+          open: open,
+          high: high,
+          low: low,
+          close: close,
+          volume: usd ?? 0,
         ),
       );
     }
@@ -84,10 +74,5 @@ query EthOhlcv {
     // API returns descending; we want chronological
     candles.sort((a, b) => a.timestamp.compareTo(b.timestamp));
     return candles;
-  }
-
-  double _toDouble(dynamic v) {
-    if (v is num) return v.toDouble();
-    return double.tryParse(v.toString()) ?? 0.0;
   }
 }

@@ -66,7 +66,12 @@ flutter-desktop-ffi-graphql-demo/
 │   ├── main.dart                        # App entry, dotenv, MaterialApp
 │   ├── core/                            # Shared infrastructure
 │   │   ├── graphql/
-│   │   │   └── bitquery_graphql_client.dart   # GraphQL client + Auth
+│   │   │   ├── bitquery_graphql_client.dart   # GraphQL client + Auth
+│   │   │   └── queries/                 # GraphQL operations + codegen
+│   │   │       ├── schema.graphql       # Bitquery schema (for codegen)
+│   │   │       ├── eth_ohlcv.graphql    # ETH OHLCV query
+│   │   │       ├── scalars.dart         # Custom scalar converters
+│   │   │       └── *.graphql.dart       # Generated (do not edit)
 │   │   └── ffi/
 │   │       └── engine_bindings.dart     # dylib load, FFI wrappers, memory mgmt
 │   └── features/
@@ -100,7 +105,9 @@ flutter-desktop-ffi-graphql-demo/
 | Package | Purpose |
 |---------|---------|
 | `graphql_flutter` | GraphQL client, HTTP link |
+| `graphql` | Core GraphQL client (used by generated code) |
 | `gql` | GraphQL AST (query parsing) |
+| `graphql_codegen` | Code generation from `.graphql` files |
 | `ffi` | Dart FFI for C interop |
 | `flutter_dotenv` | Load `.env` for `BITQUERY_API_KEY` |
 
@@ -297,6 +304,75 @@ flutter run -d macos
 
 ---
 
+## GraphQL Queries & Code Generation
+
+GraphQL operations live in `lib/core/graphql/queries/` and are type-safe via **graphql_codegen** + **build_runner**.
+
+### Layout
+
+| File | Purpose |
+|------|---------|
+| `schema.graphql` | Bitquery schema (types used by codegen) |
+| `eth_ohlcv.graphql` | ETH OHLCV query with variables |
+| `scalars.dart` | Custom converters (e.g. `FlexibleFloat` for String/num parsing) |
+| `*.graphql.dart` | **Generated** — do not edit manually |
+
+### Adding or changing a query
+
+1. **Edit or add a `.graphql` file** in `lib/core/graphql/queries/`:
+
+```graphql
+# eth_ohlcv.graphql
+query EthOhlcv($currencyId: String!, $duration: Int!, $limit: Int!, $daysAgo: Int!) {
+  Trading {
+    Currencies(where: {...}, limit: { count: $limit }, orderBy: {...}) {
+      Block { Timestamp }
+      Volume { Usd }
+      Price { Ohlc { Open High Low Close } }
+    }
+  }
+}
+```
+
+2. **Update `schema.graphql`** if the query uses new types or fields.
+
+3. **Run codegen**:
+
+```bash
+dart run build_runner build --delete-conflicting-outputs
+```
+
+This generates `eth_ohlcv.graphql.dart` with `documentNodeQueryEthOhlcv`, `Variables$Query$EthOhlcv`, `Query$EthOhlcv`, etc.
+
+4. **Use the generated code** in repositories:
+
+```dart
+import 'package:flutter_desktop_ffi_graphql_demo/core/graphql/queries/eth_ohlcv.graphql.dart';
+
+final variables = Variables$Query$EthOhlcv(
+  currencyId: 'bid:eth',
+  duration: 3600,
+  limit: 200,
+  daysAgo: 14,
+);
+final data = await _client.query(documentNodeQueryEthOhlcv, variables: variables.toJson());
+final parsed = Query$EthOhlcv.fromJson(data);
+```
+
+### Custom scalars
+
+Bitquery may return numbers as `String` or `num`. The `FlexibleFloat` scalar (see `scalars.dart`) handles both. To add more scalars, extend `schema.graphql` and configure them in `build.yaml`:
+
+```yaml
+scalars:
+  FlexibleFloat:
+    type: double
+    fromJsonFunctionName: flexibleFloatFromJson
+    import: package:flutter_desktop_ffi_graphql_demo/core/graphql/queries/scalars.dart
+```
+
+---
+
 ## Build Details
 
 - **Native build**: `scripts/build_native.sh` runs CMake in `native/build`, then copies `libfinancial_engine.dylib` to the project root.
@@ -337,6 +413,11 @@ flutter run -d macos
 
 - Bitquery may return no rows if the query filters are too strict or data is unavailable.
 - Check the console for `BitqueryException` or GraphQL error messages.
+
+**GraphQL codegen issues**
+
+- After changing `.graphql` or `schema.graphql`, run `dart run build_runner build --delete-conflicting-outputs`.
+- If you see `type 'String' is not a subtype of type 'num?'`, add a custom scalar (e.g. `FlexibleFloat`) for fields that Bitquery may return as strings.
 
 ---
 

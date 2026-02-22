@@ -50,6 +50,7 @@ class BitqueryGraphQLClient {
   /// Executes a GraphQL query. Throws [BitqueryException] on API key, network, or GraphQL errors.
   Future<Map<String, dynamic>> query(
     DocumentNode document, {
+    Map<String, dynamic>? variables,
     FetchPolicy fetchPolicy = FetchPolicy.networkOnly,
   }) async {
     _requireApiKey();
@@ -57,6 +58,7 @@ class BitqueryGraphQLClient {
     final result = await _instance.query(
       QueryOptions(
         document: document,
+        variables: variables ?? const {},
         fetchPolicy: fetchPolicy,
       ),
     );

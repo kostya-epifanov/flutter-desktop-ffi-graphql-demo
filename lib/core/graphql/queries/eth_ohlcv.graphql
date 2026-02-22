@@ -1,0 +1,22 @@
+query EthOhlcv(
+  $currencyId: String!
+  $duration: Int!
+  $limit: Int!
+  $daysAgo: Int!
+) {
+  Trading {
+    Currencies(
+      where: {
+        Currency: { Id: { is: $currencyId } },
+        Interval: { Time: { Duration: { eq: $duration } } },
+        Block: { Time: { since_relative: { days_ago: $daysAgo } } }
+      },
+      limit: { count: $limit },
+      orderBy: { descending: Block_Time }
+    ) {
+      Block { Timestamp }
+      Volume { Usd }
+      Price { Ohlc { Open High Low Close } }
+    }
+  }
+}

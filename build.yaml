@@ -1,0 +1,15 @@
+targets:
+  $default:
+    builders:
+      graphql_codegen:
+        options:
+          clients:
+            - graphql_flutter
+          assetsPath: "lib/core/graphql/queries/**.graphql"
+          scopes:
+            - lib/core/graphql/queries/**
+          scalars:
+            FlexibleFloat:
+              type: double
+              fromJsonFunctionName: flexibleFloatFromJson
+              import: package:flutter_desktop_ffi_graphql_demo/core/graphql/queries/scalars.dart

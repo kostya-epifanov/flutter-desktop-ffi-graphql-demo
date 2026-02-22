@@ -1,0 +1,92 @@
+# Minimal Bitquery Trading schema for EthOhlcv codegen.
+# Fetch full schema via: npx get-graphql-schema "https://streaming.bitquery.io/graphql" -h "Authorization: Bearer YOUR_KEY" > schema.graphql
+
+# Bitquery returns numbers as String or num; use custom scalar for parsing
+scalar FlexibleFloat
+
+schema {
+  query: Query
+}
+
+type Query {
+  Trading: Trading
+}
+
+type Trading {
+  Currencies(
+    where: CurrenciesWhere
+    limit: LimitInput
+    orderBy: OrderByInput
+  ): [Currency]
+}
+
+input CurrenciesWhere {
+  Currency: CurrencyFilter
+  Interval: IntervalFilter
+  Block: BlockFilter
+}
+
+input CurrencyFilter {
+  Id: IdFilter
+}
+
+input IdFilter {
+  is: String
+}
+
+input IntervalFilter {
+  Time: IntervalTimeFilter
+}
+
+input IntervalTimeFilter {
+  Duration: DurationFilter
+}
+
+input DurationFilter {
+  eq: Int
+}
+
+input BlockFilter {
+  Time: BlockTimeFilter
+}
+
+input BlockTimeFilter {
+  since_relative: SinceRelative
+}
+
+input SinceRelative {
+  days_ago: Int
+}
+
+input LimitInput {
+  count: Int
+}
+
+input OrderByInput {
+  descending: String
+}
+
+type Currency {
+  Block: Block
+  Volume: Volume
+  Price: Price
+}
+
+type Block {
+  Timestamp: FlexibleFloat
+}
+
+type Volume {
+  Usd: FlexibleFloat
+}
+
+type Price {
+  Ohlc: Ohlc
+}
+
+type Ohlc {
+  Open: FlexibleFloat
+  High: FlexibleFloat
+  Low: FlexibleFloat
+  Close: FlexibleFloat
+}
